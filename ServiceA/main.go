@@ -1,60 +1,59 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
-	"io/ioutil"
-	"net/http"
+	"context"
+	"log"
 
-	"github.com/gorilla/mux"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
-const serverPort int = 3333
-
-const serverPortB int = 3334
-
 func main() {
-
-	// Create a new router
-	r := mux.NewRouter()
-
-	// Define routes
-	r.HandleFunc("/0", request0Handler).Methods("POST")
-	r.HandleFunc("/4", request4Handler).Methods("POST")
-
-	// Start the server
-	http.Handle("/", r)
-	portStr := ":" + fmt.Sprintf("%v", serverPort)
-	http.ListenAndServe(portStr, nil)
-
-}
-
-func request0Handler(w http.ResponseWriter, r *http.Request) {
-	str := r.FormValue("param")
-	reqBody, err := ioutil.ReadAll(r.Body)
+	c, err := client.Dial(client.Options{})
 	if err != nil {
-		fmt.Printf("server: could not read request body: %s\n", err)
+		log.Fatalln("Unable to create client", err)
 	}
-	fmt.Printf("received message: %s\n", &reqBody)
+	defer c.Close()
 
-	// Create http request
-	jsonBody := []byte(`{"param": "` + str + `"}`)
-	bodyReader := bytes.NewReader(jsonBody)
+	// Create a new Worker
+	worker := worker.New(c, "task-queue-name", worker.Options{})
 
-	requestURL := fmt.Sprintf("http://localhost:%d/1", serverPortB)
-	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
-	if err != nil {
-		fmt.Printf("error creating http request: %s\n", err)
+	// Register Workflows
+	worker.RegisterWorkflow(StartingWorkflow)
+	// Register Activities
+	worker.RegisterActivity(sendActivity)
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "serviceA_workflowID", 
+		TaskQueue: "Service",
 	}
-
-	// Send request 1 to B
-	_, err = http.DefaultClient.Do(req)
+	_, err = c.ExecuteWorkflow(context.Background(), workflowOptions, StartingWorkflow, "Temporal")
 	if err != nil {
-		fmt.Printf("error sending http request: %s\n", err)
+		log.Fatalln("Unable to execute workflow", err)
 	}
 }
 
-func request4Handler(w http.ResponseWriter, r *http.Request) {
-	str := r.FormValue("param")
-	fmt.Fprintf(w, "received message: %s", str)
+func StartingWorkflow(ctx workflow.Context, param string) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{})
+
+	// Execute the Activity synchronously (wait for the result before proceeding)
+	var result string
+	err := workflow.ExecuteActivity(ctx, sendActivity, param).Get(ctx, &result)
+	if err != nil {
+		return "", err
+	}
+	// Make the results of the Workflow available
+	return result, nil
+}
+
+func sendActivity(ctx context.Context, param string) (*string, error) {
+
+	updateHandle, err := ctx.client.UpdateWorkflow(context.Background(), updates.YourUpdateWFID, "", updates.YourUpdateName, updateArg)
+	if err != nil {
+		log.Fatalln("Error issuing Update request", err)
+	}
+
+	var result string
+	return &result, nil
 }

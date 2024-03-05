@@ -1,84 +1,58 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"time"
+	"log"
 
-	"github.com/gorilla/mux"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
-const serverPort int = 3334
-
-const serverPortA int = 3333
-const serverPortC int = 3335
-
 func main() {
+	c, err := client.Dial(client.Options{})
+	if err != nil {
+		log.Fatalln("Unable to create client", err)
+	}
+	defer c.Close()
 
-	go func() {
-		// Create a new router
-		r := mux.NewRouter()
+	// Create a new Worker
+	worker := worker.New(c, "task-queue-name", worker.Options{})
 
-		// Define routes
-		r.HandleFunc("/1", request1Handler).Methods("POST")
-		r.HandleFunc("/3", request3Handler).Methods("POST")
+	// Register Workflows
+	worker.RegisterWorkflow(StartingWorkflow)
+	// Register Activities
+	worker.RegisterActivity(sendActivity)
 
-		// Start the server
-		http.Handle("/", r)
-		portStr := ":" + fmt.Sprintf("%v", serverPort)
-		http.ListenAndServe(portStr, nil)
-	}()
-
-	// Loop
-	for {
-		time.Sleep(100 * time.Millisecond)
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "serviceA_workflowID",
+		TaskQueue: "Service",
+	}
+	_, err = c.ExecuteWorkflow(context.Background(), workflowOptions, StartingWorkflow, "Temporal")
+	if err != nil {
+		log.Fatalln("Unable to execute workflow", err)
 	}
 }
 
-func request1Handler(w http.ResponseWriter, r *http.Request) {
-	str := r.FormValue("param")
-	fmt.Printf("received message: %s", str)
+const YourUpdateName = "	update_name"
 
-	// Create http request
-	jsonBody := []byte(`{"param": "` + str + `"}`)
-	bodyReader := bytes.NewReader(jsonBody)
-
-	requestURL := fmt.Sprintf("http://localhost:%d/2", serverPortC)
-	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
+func updatedWorkflow(ctx workflow.Context, param string) (string, error) {
+	err := workflow.SetUpdateHandler(ctx, YourUpdateName, func(ctx workflow.Context, arg string) (YourUpdateResult, error) {
+		fmt.Println("signal reveiced")
+		return arg, nil
+	})
 	if err != nil {
-		fmt.Printf("error creating http request: %s\n", err)
+		log.Fatalln("Unable to set update handler", err)
 	}
 
-	// Send request 2 to C
-	_, err = http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("error sending http request: %s\n", err)
-	}
+	var result string
+	return result, nil
 }
 
-func request3Handler(w http.ResponseWriter, r *http.Request) {
-	str := r.FormValue("param")
-	reqBody, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		fmt.Printf("server: could not read request body: %s\n", err)
-	}
-	fmt.Printf("received message: %s\n", &reqBody)
+func sendActivity(ctx context.Context, param string) (*string, error) {
+	// Start Service B
 
-	// Create http request
-	jsonBody := []byte(`{"param": "` + str + `"}`)
-	bodyReader := bytes.NewReader(jsonBody)
-
-	requestURL := fmt.Sprintf("http://localhost:%d/4", serverPortA)
-	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
-	if err != nil {
-		fmt.Printf("error creating http request: %s\n", err)
-	}
-
-	// Send request 4 to A
-	_, err = http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("error sending http request: %s\n", err)
-	}
+	var result string
+	return &result, nil
 }
