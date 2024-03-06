@@ -1,4 +1,4 @@
-module temporal_example/ServiceB
+module temporal.io/temporal_example/ServiceB
 
 go 1.21.4
 
