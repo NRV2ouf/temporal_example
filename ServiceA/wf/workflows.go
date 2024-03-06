@@ -1,13 +1,13 @@
 package wf
 
 import (
-	"fmt"
-
 	"go.temporal.io/sdk/workflow"
 )
 
 func StartingWorkflow(ctx workflow.Context, param string) (string, error) {
-	fmt.Println("starting worflow was called")
+	logger := workflow.GetLogger(ctx)
+
+	logger.Info("WorkflowA: Started\n")
 
 	ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 		TaskQueue: "ServiceB",
@@ -22,7 +22,7 @@ func StartingWorkflow(ctx workflow.Context, param string) (string, error) {
 	}
 	// Make the results of the Workflow available
 
-	fmt.Println("starting worflow has finished")
+	logger.Info("WorkflowA: Finished\n")
 
 	return result, nil
 }
